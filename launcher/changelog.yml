@@ -1,0 +1,19 @@
+ru_RU: >
+  – Ускорили запуск лаунчера при проблемах с подключением
+  <br/>– Более бережное отношение к файлам конфигурации.
+  <br/>Случаи пропажи аккаунтов из списка или сброса настроек должны стать не просто крайне редкими, а,
+  скорее всего, невозможными в принципе.
+  <br/>Если у вас когда-либо такое случалось, простите! :3
+  <br/>– Поддержка Flathub (by Prototik)
+  <br/>– Поддержка запуска на дискретных видеокартах под Linux (by Prototik)
+  <br/>– Убрали возможность добавлять новые аккаунты Mojang. Существующие продолжат «работать» (остались такие?)
+
+en_US: >
+  Launcher starts up faster when the connection is unstable
+  <br/>– Better configuration file handling
+  <br/>If you've ever witnessed that your accounts are gone, or configuration is erased, this should never happen again.
+  <br/>To those who was affected: we're sorry!
+  <br/>– Flathub support (by Prototik)
+  <br/>– Auto-switching to high-performance graphics card on Linux (by Prototik)
+  <br/>– New Mojang accounts can no longer be added into the launcher. Old ones will continue to "work"
+  (are there any left that still work?)

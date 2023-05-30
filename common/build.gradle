@@ -1,0 +1,46 @@
+plugins {
+    id 'java'
+}
+
+apply from: '../gradle/java.gradle'
+
+version 'unspecified'
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_1_8
+    targetCompatibility = JavaVersion.VERSION_1_8
+}
+
+dependencies {
+    implementation(libs.commons.lang3)
+    implementation(libs.bundles.dbus)
+    implementation(libs.bundles.jna)
+    implementation(libs.system.theme.detector)
+    implementation(libs.slf4j.api)
+
+    testImplementation(libs.junit.jupiter.api)
+    testRuntimeOnly(libs.junit.jupiter.engine)
+}
+
+test {
+    useJUnitPlatform()
+}
+
+processResources {
+    def repoProperties = [
+            "domains":      repo_domains.join(','),
+            "eu_prefixes":  repo_domain_zones_eu.join(','),
+            "ru_prefixes":  repo_domain_zones_ru.join(','),
+            "cdn_prefixes": repo_cdn_path_prefixes.join(','),
+    ]
+
+    inputs.property("repoProperties", repoProperties)
+
+    doLast {
+        file("$destinationDir/ru/turikhay/tlauncher/repository/repositories_v1.properties").withWriter('UTF-8') { writer ->
+            repoProperties.each {entry ->
+                writer.append("$entry.key=$entry.value\n")
+            }
+        }
+    }
+}

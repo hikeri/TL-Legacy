@@ -1,0 +1,213 @@
+import groovy.json.JsonBuilder
+
+import org.yaml.snakeyaml.Yaml
+
+import java.security.DigestInputStream
+import java.security.MessageDigest
+import java.time.OffsetDateTime
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
+
+plugins {
+    id 'java'
+    id "org.openjfx.javafxplugin"
+    id "com.github.gmazzo.buildconfig"
+}
+
+apply from: '../gradle/java.gradle'
+apply from: '../gradle/javafx.gradle'
+
+sourceSets {
+    modern
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_1_8
+    targetCompatibility = JavaVersion.VERSION_1_8
+}
+
+compileModernJava {
+    sourceCompatibility = JavaVersion.VERSION_11
+    targetCompatibility = JavaVersion.VERSION_11
+}
+
+compileTestJava {
+    sourceCompatibility = JavaVersion.VERSION_11
+    targetCompatibility = JavaVersion.VERSION_11
+}
+
+configurations {
+    implementation.extendsFrom(tlRuntime)
+}
+
+dependencies {
+    modernImplementation(sourceSets.main.output)
+
+    tlRuntime(libs.guava)
+    tlRuntime(libs.sentry)
+    tlRuntime(libs.slf4j.api)
+    tlRuntime(libs.jackson.core)
+    tlRuntime(libs.java.semver)
+    tlRuntime(libs.gson)
+    tlRuntime(libs.commons.io)
+    tlRuntime(libs.jopt.simple)
+    tlRuntime(libs.commons.compress)
+    tlRuntime(libs.xz)
+    tlRuntime(libs.jdom)
+    tlRuntime(libs.commons.lang3)
+    tlRuntime(libs.java.statsd.client)
+    tlRuntime(libs.bundles.log4j)
+    tlRuntime(libs.bundles.httpcomponents)
+    tlRuntime(libs.nanohttpd)
+    tlRuntime(libs.toml4j)
+    tlRuntime(libs.authlib)
+    tlRuntime(libs.jvd)
+    tlRuntime(libs.nstweaker)
+    annotationProcessor(libs.log4j.core)
+    implementation(project(":common"))
+    implementation(project(":bridge"))
+    implementation(libs.bundles.jna)
+
+    testImplementation(libs.junit.jupiter.api)
+    testImplementation(libs.mockito.core)
+    testRuntimeOnly(libs.junit.jupiter.engine)
+    testRuntimeOnly(libs.mockito.junit.jupiter)
+    testRuntimeOnly(libs.mockito.inline)
+}
+
+task buildLauncherRepo(type: Sync) {
+    destinationDir = file("${rootProject.rootDir}/lib/${short_brand}")
+    configurations.tlRuntime.resolvedConfiguration.resolvedArtifacts.each { artifact ->
+        def path = artifact.moduleVersion.id.with {
+            "${group.replace('.', '/')}/${name}/$version"
+        }
+        into(path) {
+            from(artifact.file)
+        }
+    }
+}
+
+task prepareLauncherDir(type: Sync) {
+    destinationDir = file("${buildDir}/tlRun")
+    dependsOn(compileModernJava)
+
+    from(compileModernJava)
+    from(compileJava)
+    from(processModernResources)
+    from(processResources)
+
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+
+task prepareLauncherDirJava8(type: Sync) {
+    destinationDir = file("${buildDir}/tlRun")
+    dependsOn(compileJava)
+
+    from(compileJava)
+    from(processResources)
+}
+
+static def generateChecksum(File file) {
+    file.withInputStream {
+        new DigestInputStream(it, MessageDigest.getInstance('SHA-256')).withStream {
+            it.eachByte {}
+            it.messageDigest.digest().encodeHex() as String
+        }
+    }
+}
+
+processResources {
+    def meta = [
+            version   : product_version,
+            shortBrand: short_brand,
+            brand     : full_brand,
+            libraries : configurations.tlRuntime.resolvedConfiguration.resolvedArtifacts.collect { artifact ->
+                [name: artifact.moduleVersion.id.toString(), checksum: generateChecksum(artifact.file)]
+            },
+            mainClass : System.getenv("MAIN_CLASS") ?: "ru.turikhay.tlauncher.TLauncher"
+    ]
+
+    inputs.property("meta", meta)
+
+    doLast {
+        new File(destinationDir, "ru/turikhay/tlauncher/meta.json").text = new JsonBuilder(meta).toString()
+    }
+}
+
+task generateUpdateJson {
+    dependsOn(jar)
+
+    doLast {
+        def jarFileChecksum = generateChecksum(jar.outputs.files.singleFile)
+
+        def downloadPath = "repo/update/${short_brand}/launcher/${jarFileChecksum}.jar"
+
+        def downloadUrlList = repo_hosts.collect { host ->
+            ["http", "https"].collect {scheme ->
+                "${scheme}://${host}/${downloadPath}"
+            }
+        }.flatten().toSet().sort { a, b ->
+            a.startsWith("https") ? (b.startsWith("https") ? 0 : -1) : (b.startsWith("https") ? 1 : 0)
+        }
+
+        def changelog = null
+        if (System.getenv("INCLUDE_CHANGELOG") == 'true') {
+            new File("$projectDir/changelog.yml").withReader('UTF-8') {reader ->
+                changelog = new Yaml().load(reader)
+            }
+        }
+
+        def meta = [
+                version    : product_version,
+                checksum   : jarFileChecksum,
+                url        : downloadUrlList,
+                description: changelog
+        ]
+
+        file("${buildDir}/update/${short_brand}/launcher.json").write(new JsonBuilder(meta).toString())
+    }
+}
+
+task copyJarAndRename(type: Copy) {
+    from jar
+    into "${buildDir}/update/${short_brand}"
+    rename { "launcher.jar" }
+}
+
+task generateSha256File {
+    dependsOn jar
+    doLast {
+        file("${buildDir}/update/${short_brand}/launcher.jar.sha256").write(generateChecksum(jar.outputs.files.singleFile))
+    }
+}
+
+buildConfig {
+    className("BuildConfig")
+    packageName("ru.turikhay.tlauncher.configuration")
+
+    useJavaOutput()
+
+    buildConfigField('String', 'SHORT_BRAND', "\"${short_brand}\"")
+    buildConfigField('String', 'FULL_BRAND', "\"${full_brand}\"")
+    buildConfigField('String', 'VERSION', "\"${product_version}\"")
+}
+
+assemble {
+    dependsOn(generateUpdateJson, copyJarAndRename, generateSha256File)
+}
+
+jar {
+    from(project(":common").sourceSets.main.output)
+
+    into('META-INF/versions/11') {
+        from sourceSets.modern.output
+    }
+
+    manifest.attributes(
+            'Multi-Release': true
+    )
+}
+
+test {
+    useJUnitPlatform()
+}
