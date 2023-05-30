@@ -33,5 +33,4 @@ jobs:
       with:
         arguments: build
     - name: Check ls
-      with:
-        run: ls -R
+      run: ls -R
